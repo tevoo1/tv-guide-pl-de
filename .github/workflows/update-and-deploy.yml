@@ -14,7 +14,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Download EPG files
         run: |
           mkdir -p public/data
@@ -23,7 +23,7 @@ jobs:
           test -s public/data/epg-pl.xml
           test -s public/data/epg-de.xml
       - name: Copy app
-        run: cp "$GITHUB_WORKSPACE/index.html" public/index.html
+        run: cp index.html public/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
