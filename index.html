@@ -8,13 +8,13 @@
 :root{color-scheme:dark;--bg:#0b1020;--panel:#121a2d;--line:#2b3854;--text:#f4f7ff;--muted:#a8b5ce;--accent:#70a5ff;--green:#4bd4a0}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 header{padding:14px 12px 10px;position:sticky;top:0;background:rgba(11,16,32,.97);backdrop-filter:blur(12px);z-index:5;border-bottom:1px solid var(--line)}
-h1{font-size:21px;margin:0 0 12px}.top,.country,.controls,.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+h1{font-size:21px;margin:0 0 12px;flex:1;min-width:0}.top,.country,.controls,.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 button,select,input{font:inherit;color:var(--text);background:#18233a;border:1px solid var(--line);border-radius:9px;padding:9px 10px}button{cursor:pointer}button.active{background:#274777;border-color:var(--accent)}button.primary{background:var(--accent);color:#081326;border-color:var(--accent);font-weight:700}
-#now{margin-left:auto;color:var(--green);font-weight:700;font-variant-numeric:tabular-nums}.controls{margin-top:9px}.controls input[type=search]{flex:1;min-width:160px}.controls select{max-width:155px}#status{color:var(--muted);font-size:12px;margin-top:8px}
+#now{display:block;flex:0 0 64px;min-width:64px;margin-left:auto;text-align:right;white-space:nowrap;color:var(--green);font-weight:700;font-variant-numeric:tabular-nums}.controls{margin-top:9px}.controls input[type=search]{flex:1;min-width:160px}.controls select{max-width:155px}#status{color:var(--muted);font-size:12px;margin-top:8px}
 main{padding:12px 10px 36px}.hint{color:var(--muted);font-size:12px;line-height:1.45;margin:0 0 10px}
-#timelineHead{position:sticky;top:var(--header-height,220px);z-index:4;display:grid;grid-template-columns:155px minmax(0,1fr);background:var(--bg);border:1px solid var(--line);border-bottom:0;border-radius:8px 8px 0 0;overflow:hidden}
+#timelineHead{position:sticky;top:var(--header-height,220px);z-index:20;display:grid;grid-template-columns:155px minmax(0,1fr);background:var(--bg);isolation:isolate;border:1px solid var(--line);border-bottom:0;border-radius:8px 8px 0 0;overflow:hidden}
 .axis-label{padding:7px;border-right:1px solid var(--line);color:var(--muted);font-size:11px}.axis-scroll{overflow:hidden;min-width:0}.axis{height:32px;display:flex;background:#111a2d}
-.hour{flex:0 0 240px;border-left:1px solid #40506e;padding:7px 5px;color:#d2def2;font-size:11px;font-variant-numeric:tabular-nums}
+.hour{flex:0 0 300px;border-left:1px solid #40506e;padding:7px 5px;color:#d2def2;font-size:11px;font-variant-numeric:tabular-nums}
 .channel{display:grid;grid-template-columns:155px minmax(0,1fr);border:1px solid var(--line);border-bottom:0;overflow:hidden;margin:0;background:var(--panel);min-height:88px}
 .channel:last-child{border-bottom:1px solid var(--line);border-radius:0 0 10px 10px}.chname{padding:9px 8px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:6px;justify-content:center;font-size:12px;font-weight:700;overflow-wrap:anywhere}.chname small{display:none}.channel{cursor:grab}.channel.dragging{opacity:.45}.channel.drop-target{box-shadow:inset 0 3px 0 var(--accent)}.chname{user-select:none}
 .chname small.live{color:var(--green)}.programmes{position:relative;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;overscroll-behavior-x:contain}.blocks{min-height:88px;position:relative}
@@ -50,7 +50,7 @@ dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);bo
 </dialog>
 <script>
 (()=>{
-const sources={pl:"data/epg-pl.xml",de:"data/epg-de.xml"},PX=4,DAY_WIDTH=2880*PX;
+const sources={pl:"data/epg-pl.xml",de:"data/epg-de.xml"},PX=5,DAY_WIDTH=2880*PX;
 const state={country:"de",channels:{pl:[],de:[]},programmes:{pl:[],de:[]},selected:{pl:[],de:[]},order:{pl:[],de:[]},loaded:{pl:false,de:false},indexed:{pl:false,de:false},byChannel:{pl:new Map(),de:new Map()},checked:new Set()};
 const $=id=>document.getElementById(id),pad=n=>String(n).padStart(2,"0");
 function displayChannelName(name){return String(name||"").replace(/^(?:DE|PL)\s*-\s*/i,"").trim()}
@@ -73,11 +73,19 @@ row.addEventListener("dragstart",e=>{draggedChannelId=ch.id;row.classList.add("d
 row.addEventListener("dragend",()=>{draggedChannelId=null;document.querySelectorAll(".channel").forEach(el=>el.classList.remove("dragging","drop-target"))});
 row.addEventListener("dragover",e=>{e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect="move";if(row.dataset.channelId!==draggedChannelId)row.classList.add("drop-target")});
 row.addEventListener("dragleave",()=>row.classList.remove("drop-target"));
-row.addEventListener("drop",e=>{e.preventDefault();row.classList.remove("drop-target");const id=(e.dataTransfer&&e.dataTransfer.getData("text/plain"))||draggedChannelId;reorderChannel(id,ch.id)});const label=document.createElement("div");label.className="chname";label.append(document.createTextNode(displayChannelName(ch.name)));const small=document.createElement("small");const current=(state.byChannel[c].get(ch.id)||[]).find(p=>p.start<=now&&p.stop>now);small.textContent=current?"● LIVE":"Programm";if(current)small.className="live";label.append(small);const wrap=document.createElement("div");wrap.className="programmes";const blocks=document.createElement("div");blocks.className="blocks";blocks.style.width=DAY_WIDTH+"px";const list=(state.byChannel[c].get(ch.id)||[]).filter(p=>p.stop>start&&p.start<end);for(const p of list){const from=Math.max(0,minuteFromDay(p.start,start)),to=Math.min(2880,minuteFromDay(p.stop,start));if(to<=from)continue;const item=document.createElement("div");item.className="programme";item.style.left=(from*PX)+"px";item.style.width=((to-from)*PX)+"px";if(p.start<=now&&p.stop>now&&today)item.classList.add("current");const t=document.createElement("div");t.className="time";t.textContent=time(p.start)+"–"+time(p.stop);const title=document.createElement("div");title.className="name";title.textContent=p.title;item.append(t,title);
+row.addEventListener("drop",e=>{e.preventDefault();row.classList.remove("drop-target");const id=(e.dataTransfer&&e.dataTransfer.getData("text/plain"))||draggedChannelId;reorderChannel(id,ch.id)});const label=document.createElement("div");label.className="chname";label.append(document.createTextNode(displayChannelName(ch.name)));const small=document.createElement("small");const current=(state.byChannel[c].get(ch.id)||[]).find(p=>p.start<=now&&p.stop>now);small.textContent=current?"● LIVE":"Programm";if(current)small.className="live";label.append(small);const wrap=document.createElement("div");wrap.className="programmes";const blocks=document.createElement("div");blocks.className="blocks";blocks.style.width=DAY_WIDTH+"px";const list=(state.byChannel[c].get(ch.id)||[]).filter(p=>p.stop>start&&p.start<end);for(const p of list){const from=Math.max(0,minuteFromDay(p.start,start)),to=Math.min(2880,minuteFromDay(p.stop,start));if(to<=from)continue;const item=document.createElement("div");item.className="programme";item.style.left=(from*PX)+"px";item.style.width=((to-from)*PX)+"px";if(p.start<=now&&p.stop>now&&today)item.classList.add("current");const t=document.createElement("div");t.className="time";t.textContent=time(p.start);const title=document.createElement("div");title.className="name";title.textContent=p.title;item.append(t,title);
 item.tabIndex=0;item.setAttribute("role","button");item.setAttribute("aria-label","Details zur Sendung: "+p.title);
 item.onclick=()=>showProgramme(p);
 item.onkeydown=ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();showProgramme(p)}};if(p.start<=now&&p.stop>now&&today){const progress=document.createElement("div");progress.className="progress";progress.style.width=Math.max(0,Math.min(100,(now-p.start)/(p.stop-p.start)*100))+"%";item.append(progress)}blocks.append(item)}wrap.append(blocks);if(!chosen.isNow)addSelectedLine(wrap,chosen.minutes);row.append(label,wrap);rows.append(row)}syncScroll(today,chosen)}
-function syncScroll(today,chosen){const n=new Date();const focusMinutes=(today&&chosen.isNow)?n.getHours()*60+n.getMinutes():chosen.minutes;const offset=Math.max(0,focusMinutes*PX),axis=$("axisScroll");axis.scrollLeft=offset;document.querySelectorAll(".programmes").forEach(el=>{el.scrollLeft=offset;el.onscroll=()=>{axis.scrollLeft=el.scrollLeft;document.querySelectorAll(".programmes").forEach(other=>{if(other!==el)other.scrollLeft=el.scrollLeft})}})}
+function syncScroll(today,chosen){
+ const n=new Date();let focusMinutes=chosen.minutes;
+ if(today&&chosen.isNow){
+  const starts=visibleChannels().map(ch=>(state.byChannel[state.country].get(ch.id)||[]).find(p=>p.start<=n&&p.stop>n)).filter(Boolean).map(p=>minuteFromDay(p.start,new Date(($("day").value||dateKey(n))+"T00:00:00")));
+  focusMinutes=starts.length?Math.min(...starts):n.getHours()*60+n.getMinutes();
+ }
+ const offset=Math.max(0,focusMinutes*PX-10*PX),axis=$("axisScroll");axis.scrollLeft=offset;
+ document.querySelectorAll(".programmes").forEach(el=>{el.scrollLeft=offset;el.onscroll=()=>{axis.scrollLeft=el.scrollLeft;document.querySelectorAll(".programmes").forEach(other=>{if(other!==el)other.scrollLeft=el.scrollLeft})}})
+}
 function chooseCountry(c){state.country=c;$("pl").classList.toggle("active",c==="pl");$("de").classList.toggle("active",c==="de");$("search").value="";initDays();load(c).then(()=>{if(state.loaded[c])render()})}
 let draggedChannelId=null;
 function reorderChannel(dragId,targetId){
@@ -105,7 +113,7 @@ $("programmeClose").onclick=()=>$("programmeDialog").close();
 $("programmeOk").onclick=()=>$("programmeDialog").close();
 function updateHeaderHeight(){document.documentElement.style.setProperty("--header-height",Math.ceil($("header").getBoundingClientRect().height)+"px")}
 window.addEventListener("resize",updateHeaderHeight);
-updateHeaderHeight();initDays();buildAxis();tick();chooseCountry("de");setInterval(tick,30000);
+updateHeaderHeight();initDays();buildAxis();tick();requestAnimationFrame(()=>{updateHeaderHeight();if(state.loaded[state.country])render()});chooseCountry("de");setInterval(tick,30000);
 })();
 </script>
 </body>
