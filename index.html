@@ -130,13 +130,20 @@ async function load(c) {
   catch (e) { console.warn("EPG-Cache konnte nicht gelesen werden:", e); }
 
   // Vor allem anderen die lokal gespeicherte Datenbank anzeigen.
-  if (cached && cached.xml) {
+  if (cached && (cached.data || cached.xml)) {
     try {
-      const oldData = parseXml(cached.xml);
+      // Prefer already parsed data: avoid parsing the large XML on every opening.
+      const oldData = cached.data || parseXml(cached.xml);
       if (oldData.channels.length && oldData.programmes.length) {
         applyEpgData(c, oldData);
         status(`${state.channels[c].length} Sender · ${state.programmes[c].length.toLocaleString("de-DE")} Sendungen`);
         render();
+        // Upgrade an older XML-only cache to the parsed-data format.
+        if (!cached.data) {
+          try { await writeEpgCache(c, { data: oldData, cycle: cached.cycle }); } catch (e) {
+            console.warn("EPG-Cache konnte nicht aktualisiert werden:", e);
+          }
+        }
       } else {
         cached = null;
       }
@@ -168,7 +175,7 @@ async function load(c) {
 
     applyEpgData(c, data);
     try {
-      await writeEpgCache(c, { xml, cycle });
+      await writeEpgCache(c, { data, cycle });
       localStorage.setItem(attemptedKey, cycle);
     } catch (e) {
       console.warn("EPG-Cache konnte nicht gespeichert werden:", e);
