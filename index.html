@@ -12,8 +12,8 @@ h1{font-size:21px;margin:0 0 12px;flex:1;min-width:0}.top,.country,.controls,.to
 button,select,input{font:inherit;color:var(--text);background:#18233a;border:1px solid var(--line);border-radius:9px;padding:9px 10px}button{cursor:pointer}button.active{background:#274777;border-color:var(--accent)}button.primary{background:var(--accent);color:#081326;border-color:var(--accent);font-weight:700}
 #now{display:block;flex:0 0 64px;min-width:64px;margin-left:auto;text-align:right;white-space:nowrap;color:var(--green);font-weight:700;font-variant-numeric:tabular-nums}.controls{margin-top:9px}.controls input[type=search]{flex:1;min-width:160px}.controls select{max-width:155px}#status{color:var(--muted);font-size:12px;margin-top:8px}
 main{padding:12px 10px 36px}.hint{color:var(--muted);font-size:12px;line-height:1.45;margin:0 0 10px}
-#timelineHead{position:sticky;top:var(--header-height,220px);z-index:20;display:grid;grid-template-columns:155px minmax(0,1fr);background:var(--bg);isolation:isolate;border:1px solid var(--line);border-bottom:0;border-radius:8px 8px 0 0;overflow:hidden}
-.axis-label{padding:7px;border-right:1px solid var(--line);color:var(--muted);font-size:11px}.axis-scroll{overflow:hidden;min-width:0}.axis{height:32px;display:flex;background:#111a2d}
+#timelineHead{position:sticky;top:var(--header-height,220px);z-index:3;display:grid;grid-template-columns:155px minmax(0,1fr);background:var(--bg);isolation:isolate;border:1px solid var(--line);border-bottom:0;border-radius:8px 8px 0 0;overflow:hidden}
+.axis-label{background:#0b1020;opacity:1;padding:7px;border-right:1px solid var(--line);color:var(--muted);font-size:11px}.axis-scroll{overflow:hidden;min-width:0}.axis{height:32px;display:flex;background:#111a2d;opacity:1}
 .hour{flex:0 0 300px;border-left:1px solid #40506e;padding:7px 5px;color:#d2def2;font-size:11px;font-variant-numeric:tabular-nums}
 .channel{display:grid;grid-template-columns:155px minmax(0,1fr);border:1px solid var(--line);border-bottom:0;overflow:hidden;margin:0;background:var(--panel);min-height:88px}
 .channel:last-child{border-bottom:1px solid var(--line);border-radius:0 0 10px 10px}.chname{padding:9px 8px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:6px;justify-content:center;font-size:12px;font-weight:700;overflow-wrap:anywhere}.chname small{display:none}.channel{cursor:grab}.channel.dragging{opacity:.45}.channel.drop-target{box-shadow:inset 0 3px 0 var(--accent)}.chname{user-select:none}
@@ -78,13 +78,14 @@ item.tabIndex=0;item.setAttribute("role","button");item.setAttribute("aria-label
 item.onclick=()=>showProgramme(p);
 item.onkeydown=ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();showProgramme(p)}};if(p.start<=now&&p.stop>now&&today){const progress=document.createElement("div");progress.className="progress";progress.style.width=Math.max(0,Math.min(100,(now-p.start)/(p.stop-p.start)*100))+"%";item.append(progress)}blocks.append(item)}wrap.append(blocks);if(!chosen.isNow)addSelectedLine(wrap,chosen.minutes);row.append(label,wrap);rows.append(row)}syncScroll(today,chosen)}
 function syncScroll(today,chosen){
- const n=new Date();let focusMinutes=chosen.minutes;
- if(today&&chosen.isNow){
-  const starts=visibleChannels().map(ch=>(state.byChannel[state.country].get(ch.id)||[]).find(p=>p.start<=n&&p.stop>n)).filter(Boolean).map(p=>minuteFromDay(p.start,new Date(($("day").value||dateKey(n))+"T00:00:00")));
-  focusMinutes=starts.length?Math.min(...starts):n.getHours()*60+n.getMinutes();
- }
- const offset=Math.max(0,focusMinutes*PX-10*PX),axis=$("axisScroll");axis.scrollLeft=offset;
- document.querySelectorAll(".programmes").forEach(el=>{el.scrollLeft=offset;el.onscroll=()=>{axis.scrollLeft=el.scrollLeft;document.querySelectorAll(".programmes").forEach(other=>{if(other!==el)other.scrollLeft=el.scrollLeft})}})
+ const n=new Date();
+ const focusMinutes=(today&&chosen.isNow)?Math.floor((n.getHours()*60+n.getMinutes())/60)*60:Math.floor(chosen.minutes/60)*60;
+ const offset=Math.max(0,focusMinutes*PX),axis=$("axisScroll");
+ axis.scrollLeft=offset;
+ document.querySelectorAll(".programmes").forEach(el=>{
+  el.scrollLeft=offset;
+  el.onscroll=()=>{axis.scrollLeft=el.scrollLeft;document.querySelectorAll(".programmes").forEach(other=>{if(other!==el)other.scrollLeft=el.scrollLeft})}
+ })
 }
 function chooseCountry(c){state.country=c;$("pl").classList.toggle("active",c==="pl");$("de").classList.toggle("active",c==="de");$("search").value="";initDays();load(c).then(()=>{if(state.loaded[c])render()})}
 let draggedChannelId=null;
