@@ -57,9 +57,134 @@ function displayChannelName(name){return String(name||"").replace(/^(?:DE|PL)\s*
 const dateKey=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,time=d=>`${pad(d.getHours())}:${pad(d.getMinutes())}`;
 function parseDate(v){if(!v)return null;const m=v.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*([+-]\d{4}|Z)?/);if(!m)return null;const base=`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`;if(!m[7])return new Date(base);if(m[7]==="Z")return new Date(base+"Z");return new Date(`${base}${m[7].slice(0,3)}:${m[7].slice(3)}`)}
 function parseXml(s){const x=new DOMParser().parseFromString(s,"text/xml");if(x.querySelector("parsererror"))throw Error("Ungültiges XMLTV-Format");const channels=[...x.querySelectorAll("channel")].map(c=>({id:c.getAttribute("id"),name:c.querySelector("display-name")?.textContent?.trim()||c.getAttribute("id")}));const programmes=[...x.querySelectorAll("programme")].map(p=>({channel:p.getAttribute("channel"),start:parseDate(p.getAttribute("start")),stop:parseDate(p.getAttribute("stop")),title:p.querySelector("title")?.textContent?.trim()||"Ohne Titel",desc:p.querySelector("desc")?.textContent?.trim()||""})).filter(p=>p.start&&p.stop&&p.stop>p.start);return{channels,programmes}}
+const EPG_DB_NAME = "fernsehprogramm-epg";
+const EPG_STORE = "xml";
+const EPG_UPDATE_HOUR = 5;
+
+function updateCycleKey(date = new Date()) {
+  const d = new Date(date);
+  if (d.getHours() < EPG_UPDATE_HOUR) d.setDate(d.getDate() - 1);
+  return dateKey(d);
+}
+
+function openEpgDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(EPG_DB_NAME, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(EPG_STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function readEpgCache(country) {
+  const db = await openEpgDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(EPG_STORE, "readonly");
+    const request = tx.objectStore(EPG_STORE).get(country);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => db.close();
+  });
+}
+
+async function writeEpgCache(country, record) {
+  const db = await openEpgDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(EPG_STORE, "readwrite");
+    tx.objectStore(EPG_STORE).put(record, country);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+    tx.onabort = () => { db.close(); reject(tx.error || new Error("Cache-Speicherung fehlgeschlagen")); };
+  });
+}
+
+function applyEpgData(country, data) {
+  state.channels[country] = data.channels;
+  state.programmes[country] = data.programmes;
+  const valid = new Set(data.channels.map(ch => ch.id));
+  const saved = JSON.parse(localStorage.getItem("tvguide-selected-" + country) || "null");
+  const oldOrder = JSON.parse(localStorage.getItem("tvguide-order-" + country) || "null");
+  state.order[country] = Array.isArray(oldOrder) ? oldOrder.filter(id => valid.has(id)) : [];
+  for (const ch of data.channels) if (!state.order[country].includes(ch.id)) state.order[country].push(ch.id);
+  state.selected[country] = Array.isArray(saved) ? saved.filter(id => valid.has(id)) : [...state.order[country]];
+  state.byChannel[country] = new Map();
+  for (const p of data.programmes) {
+    if (!state.byChannel[country].has(p.channel)) state.byChannel[country].set(p.channel, []);
+    state.byChannel[country].get(p.channel).push(p);
+  }
+  state.loaded[country] = true;
+  state.indexed[country] = true;
+  initDays();
+  buildAxis();
+  savePrefs(country);
+}
 function savePrefs(c){localStorage.setItem("tvguide-selected-"+c,JSON.stringify(state.selected[c]));localStorage.setItem("tvguide-order-"+c,JSON.stringify(state.order[c]))}
 function status(s){$("status").textContent=s}
-async function load(c){if(state.loaded[c])return;status((c==="pl"?"Polnisches":"Deutsches")+" Programm wird geladen …");try{const r=await fetch(sources[c],{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);const d=parseXml(await r.text());state.channels[c]=d.channels;state.programmes[c]=d.programmes;state.loaded[c]=true;const valid=new Set(d.channels.map(x=>x.id));const saved=JSON.parse(localStorage.getItem("tvguide-selected-"+c)||"null");state.selected[c]=Array.isArray(saved)?saved.filter(id=>valid.has(id)):d.channels.map(x=>x.id);const oldOrder=JSON.parse(localStorage.getItem("tvguide-order-"+c)||"null");state.order[c]=Array.isArray(oldOrder)?oldOrder.filter(id=>valid.has(id)):[];for(const ch of d.channels)if(!state.order[c].includes(ch.id))state.order[c].push(ch.id);if(saved===null)state.selected[c]=[...state.order[c]];state.byChannel[c]=new Map();for(const p of d.programmes){if(!state.byChannel[c].has(p.channel))state.byChannel[c].set(p.channel,[]);state.byChannel[c].get(p.channel).push(p)}state.indexed[c]=true;initDays();buildAxis();savePrefs(c);status(`${d.channels.length} Sender · ${d.programmes.length.toLocaleString("de-DE")} Sendungen`);render()}catch(e){status("Programm konnte nicht geladen werden: "+e.message);$("rows").innerHTML='<div class="empty">Programm konnte nicht geladen werden. Bitte Seite neu laden.</div>'}}
+async function load(c) {
+  if (state.loaded[c]) return;
+  const cycle = updateCycleKey();
+  let cached = null;
+
+  try { cached = await readEpgCache(c); }
+  catch (e) { console.warn("EPG-Cache konnte nicht gelesen werden:", e); }
+
+  // Vor allem anderen die lokal gespeicherte Datenbank anzeigen.
+  if (cached && cached.xml) {
+    try {
+      const oldData = parseXml(cached.xml);
+      if (oldData.channels.length && oldData.programmes.length) {
+        applyEpgData(c, oldData);
+        status(`${state.channels[c].length} Sender · ${state.programmes[c].length.toLocaleString("de-DE")} Sendungen`);
+        render();
+      } else {
+        cached = null;
+      }
+    } catch (e) {
+      console.warn("EPG-Cache ist ungültig:", e);
+      cached = null;
+    }
+  }
+
+  // Diese Daten wurden in diesem Tageszyklus bereits aktualisiert.
+  if (cached && cached.cycle === cycle) return;
+
+  // Nach einem fehlgeschlagenen Versuch nicht bei jedem Öffnen erneut laden.
+  const attemptedKey = "tvguide-epg-attempt-" + c;
+  if (cached && localStorage.getItem(attemptedKey) === cycle) {
+    status(`${state.channels[c].length} Sender · ${state.programmes[c].length.toLocaleString("de-DE")} Sendungen · gespeicherte Daten`);
+    return;
+  }
+
+  if (cached) localStorage.setItem(attemptedKey, cycle);
+  status((c === "pl" ? "Polnisches" : "Deutsches") + " Programm wird " + (state.loaded[c] ? "im Hintergrund aktualisiert …" : "geladen …"));
+
+  try {
+    const response = await fetch(sources[c], { cache: "no-cache" });
+    if (!response.ok) throw Error("HTTP " + response.status);
+    const xml = await response.text();
+    const data = parseXml(xml);
+    if (!data.channels.length || !data.programmes.length) throw Error("Die EPG-Datei enthält keine Programmdaten");
+
+    applyEpgData(c, data);
+    try {
+      await writeEpgCache(c, { xml, cycle });
+      localStorage.setItem(attemptedKey, cycle);
+    } catch (e) {
+      console.warn("EPG-Cache konnte nicht gespeichert werden:", e);
+    }
+    status(`${data.channels.length} Sender · ${data.programmes.length.toLocaleString("de-DE")} Sendungen`);
+    render();
+  } catch (e) {
+    if (state.loaded[c]) {
+      status(`${state.channels[c].length} Sender · ${state.programmes[c].length.toLocaleString("de-DE")} Sendungen · gespeicherte Daten`);
+      render();
+    } else {
+      status("Programm konnte nicht geladen werden: " + e.message);
+      $("rows").innerHTML = '<div class="empty">Programm konnte nicht geladen werden. Bitte Seite neu laden.</div>';
+    }
+  }
+}
 function initDays(){const s=$("day"),old=s.value;s.innerHTML="";for(let i=0;i<7;i++){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()+i);const o=document.createElement("option");o.value=dateKey(d);o.textContent=i===0?"Heute":i===1?"Morgen":d.toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit"});s.append(o)}s.value=[...s.options].some(o=>o.value===old)?old:dateKey(new Date())}
 function buildAxis(){const a=$("axis");a.innerHTML="";a.style.width=DAY_WIDTH+"px";for(let h=0;h<48;h++){const e=document.createElement("div");e.className="hour";e.textContent=pad(h%24)+":00"+(h>=24?" (+1)":"");a.append(e)}}
 function localMinuteOfDay(d){return d.getHours()*60+d.getMinutes()+d.getSeconds()/60}
